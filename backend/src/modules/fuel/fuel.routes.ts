@@ -23,7 +23,7 @@ router.get("/", async (req, res, next) => {
   }
 });
 
-router.post("/", requireRole(Role.FLEET_MANAGER, Role.DRIVER), validate(createFuelLogSchema), async (req, res, next) => {
+router.post("/", requireRole(Role.FLEET_MANAGER, Role.DRIVER, Role.FINANCIAL_ANALYST, Role.SAFETY_OFFICER), validate(createFuelLogSchema), async (req, res, next) => {
   try {
     const log = await fuelService.createFuelLog(req.body);
     res.status(201).json(log);

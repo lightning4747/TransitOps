@@ -159,20 +159,20 @@ export default function FuelExpensesPage() {
   const fuelColumns: Column<FuelLog>[] = [
     { key: 'vehicle', header: 'Vehicle', accessor: (fl) => fl.vehicle?.regNumber ?? fl.vehicleId.slice(0, 8) },
     { key: 'liters', header: 'Liters', accessor: (fl) => `${fl.liters} L` },
-    { key: 'cost', header: 'Cost', accessor: (fl) => formatCurrency(fl.cost) },
-    { key: 'costPerLiter', header: '₹/L', accessor: (fl) => (fl.liters > 0 ? `₹${(fl.cost / fl.liters).toFixed(2)}` : '—') },
+    { key: 'cost', header: 'Cost', accessor: (fl) => formatCurrency(Number(fl.cost)) },
+    { key: 'costPerLiter', header: '₹/L', accessor: (fl) => (Number(fl.liters) > 0 ? `₹${(Number(fl.cost) / Number(fl.liters)).toFixed(2)}` : '—') },
     { key: 'date', header: 'Date', accessor: (fl) => formatDate(fl.date), sortable: true },
   ];
 
   const expenseColumns: Column<Expense>[] = [
     { key: 'vehicle', header: 'Vehicle', accessor: (ex) => ex.vehicle?.regNumber ?? ex.vehicleId.slice(0, 8) },
     { key: 'type', header: 'Type', accessor: (ex) => ex.type },
-    { key: 'amount', header: 'Amount', accessor: (ex) => formatCurrency(ex.amount) },
+    { key: 'amount', header: 'Amount', accessor: (ex) => formatCurrency(Number(ex.amount)) },
     { key: 'date', header: 'Date', accessor: (ex) => formatDate(ex.date), sortable: true },
   ];
 
-  const totalFuel = fuelLogs.reduce((s, fl) => s + fl.cost, 0);
-  const totalExpenses = expenses.reduce((s, ex) => s + ex.amount, 0);
+  const totalFuel = fuelLogs.reduce((s, fl) => s + Number(fl.cost), 0);
+  const totalExpenses = expenses.reduce((s, ex) => s + Number(ex.amount), 0);
 
   return (
     <div className="space-y-5">

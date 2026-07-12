@@ -23,7 +23,7 @@ router.get("/", async (req, res, next) => {
   }
 });
 
-router.post("/", requireRole(Role.FLEET_MANAGER, Role.DRIVER), validate(createExpenseSchema), async (req, res, next) => {
+router.post("/", requireRole(Role.FLEET_MANAGER, Role.DRIVER, Role.FINANCIAL_ANALYST, Role.SAFETY_OFFICER), validate(createExpenseSchema), async (req, res, next) => {
   try {
     const expense = await expenseService.createExpense(req.body);
     res.status(201).json(expense);
