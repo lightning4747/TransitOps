@@ -1,4 +1,5 @@
 import client from './client';
+import { useAuthStore } from '../store/authStore';
 import type {
   FuelEfficiencyReport,
   UtilizationReport,
@@ -33,8 +34,8 @@ export const getRoi = async (vehicleId?: string): Promise<RoiReport[]> => {
 };
 
 export const exportCsv = (): void => {
-  const token = localStorage.getItem('token');
-  const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api';
+  const token = useAuthStore.getState().token;
+  const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:4000/api';
   const url = `${baseUrl}/reports/export.csv${token ? `?token=${token}` : ''}`;
   window.open(url, '_blank');
 };
