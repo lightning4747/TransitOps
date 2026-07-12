@@ -499,3 +499,22 @@ All errors — validation, auth, business rule violations, and unexpected except
   }
 }
 ```
+
+---
+
+## Testing Credentials
+
+Use the following seeded accounts to test the application:
+
+* **Fleet Manager**:
+  * Email: `fleet@transitops.dev`
+  * Password: `password123`
+* **Driver**:
+  * Email: `driver@transitops.dev`
+  * Password: `password123`
+* **Safety Officer**:
+  * Email: `safety@transitops.dev`
+  * Password: `password123`
+* **Financial Analyst**:
+  * Email: `analyst@transitops.dev`
+  * Password: `password123`

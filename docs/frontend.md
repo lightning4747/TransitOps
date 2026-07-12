@@ -159,3 +159,22 @@ Set `VITE_USE_MOCK=true` in the frontend `.env` to replace all API calls with th
 
 ### Form validation
 `lib/form.ts` exports a `zr()` helper that passes a Zod schema to `zodResolver` from `@hookform/resolvers/zod`. All forms use this helper to keep the `useForm` call concise and keep validation logic colocated with the Zod schema definition.
+
+---
+
+## Testing Credentials
+
+Use the following seeded accounts to test the application:
+
+* **Fleet Manager**:
+  * Email: `fleet@transitops.dev`
+  * Password: `password123`
+* **Driver**:
+  * Email: `driver@transitops.dev`
+  * Password: `password123`
+* **Safety Officer**:
+  * Email: `safety@transitops.dev`
+  * Password: `password123`
+* **Financial Analyst**:
+  * Email: `analyst@transitops.dev`
+  * Password: `password123`

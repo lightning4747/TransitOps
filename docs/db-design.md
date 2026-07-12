@@ -175,3 +175,22 @@ Prisma serialises all `Decimal` columns as **strings** over JSON. This affects: 
 
 ### Seed data
 `prisma/seed.ts` populates the database with a representative set of vehicles, drivers, users (one per role), trips in various states, maintenance logs, fuel logs, and expenses — sufficient to exercise every dashboard metric and report endpoint.
+
+---
+
+## Testing Credentials
+
+Use the following seeded accounts to test the application:
+
+* **Fleet Manager**:
+  * Email: `fleet@transitops.dev`
+  * Password: `password123`
+* **Driver**:
+  * Email: `driver@transitops.dev`
+  * Password: `password123`
+* **Safety Officer**:
+  * Email: `safety@transitops.dev`
+  * Password: `password123`
+* **Financial Analyst**:
+  * Email: `analyst@transitops.dev`
+  * Password: `password123`
