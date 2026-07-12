@@ -129,13 +129,13 @@ export default function TripDetailDrawer({ trip, onClose }: Props) {
             <section>
               <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Trip Outcome</h3>
               <dl className="grid grid-cols-2 gap-2 text-sm">
-                <Pair label="Start Odometer" value={trip.startOdometer != null ? `${trip.startOdometer.toLocaleString()} km` : '—'} />
-                <Pair label="End Odometer" value={trip.endOdometer != null ? `${trip.endOdometer.toLocaleString()} km` : '—'} />
-                <Pair label="Fuel Consumed" value={trip.fuelConsumed != null ? `${formatNumber(trip.fuelConsumed)} L` : '—'} />
+                <Pair label="Start Odometer" value={trip.startOdometer != null ? `${Number(trip.startOdometer).toLocaleString()} km` : '—'} />
+                <Pair label="End Odometer" value={trip.endOdometer != null ? `${Number(trip.endOdometer).toLocaleString()} km` : '—'} />
+                <Pair label="Fuel Consumed" value={trip.fuelConsumed != null ? `${formatNumber(Number(trip.fuelConsumed))} L` : '—'} />
                 {trip.endOdometer && trip.startOdometer && trip.fuelConsumed && (
                   <Pair
                     label="Actual Efficiency"
-                    value={`${formatNumber((trip.endOdometer - trip.startOdometer) / trip.fuelConsumed)} km/L`}
+                    value={`${formatNumber((Number(trip.endOdometer) - Number(trip.startOdometer)) / Number(trip.fuelConsumed))} km/L`}
                   />
                 )}
               </dl>
