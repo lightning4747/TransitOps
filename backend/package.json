@@ -8,7 +8,7 @@
     "seed": "ts-node src/prisma/seed.ts"
   },
   "prisma": {
-    "schema": "src/prisma/schema.prisma"
+    "seed": "ts-node src/prisma/seed.ts"
   },
   "keywords": [],
   "author": "",
