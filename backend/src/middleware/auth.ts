@@ -26,12 +26,21 @@ export const auth = (req: Request, res: Response, next: NextFunction): void => {
   }
 
   const authHeader = req.headers.authorization;
+  // For browser-initiated downloads (window.open), the token is passed as a query param
+  // because browsers cannot set custom headers on navigation requests.
+  const queryToken = typeof req.query.token === "string" ? req.query.token : undefined;
 
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+  if (!authHeader && !queryToken) {
     throw new AppError(401, "UNAUTHORIZED", "Missing or invalid authorization header");
   }
 
-  const token = authHeader.split(" ")[1];
+  const token = authHeader?.startsWith("Bearer ")
+    ? authHeader.split(" ")[1]
+    : queryToken;
+
+  if (!token) {
+    throw new AppError(401, "UNAUTHORIZED", "Missing or invalid authorization header");
+  }
 
   try {
     const secret = process.env.JWT_SECRET || "your_super_secret_hackathon_key_here";
