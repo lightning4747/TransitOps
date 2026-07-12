@@ -1,7 +1,15 @@
 import { PrismaClient, VehicleStatus, DriverStatus, TripStatus, MaintenanceStatus, Role } from "@prisma/client";
+import { PrismaPg } from "@prisma/adapter-pg";
+import { Pool } from "pg";
 import { createHash } from "crypto";
+import * as dotenv from "dotenv";
 
-const prisma = new PrismaClient();
+// Prisma 7: URL is no longer in schema.prisma, must be passed to PrismaClient.
+dotenv.config();
+
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const adapter = new PrismaPg(pool);
+const prisma = new PrismaClient({ adapter });
 
 // ---------------------------------------------------------------------------
 // Helpers
