@@ -8,7 +8,7 @@ import Modal from '../components/common/Modal';
 import VehicleForm from '../components/vehicles/VehicleForm';
 import { useVehicles, useCreateVehicle, useUpdateVehicle } from '../hooks/useVehicles';
 import { useAuthStore } from '../store/authStore';
-import { formatCurrency } from '../lib/utils';
+import { formatCurrency, getAxiosErrorMessage } from '../lib/utils';
 import type { Vehicle } from '../types';
 import type { CreateVehicleInput } from '../api/vehicles';
 
@@ -46,7 +46,7 @@ export default function VehiclesPage() {
       toast.success('Vehicle added successfully');
       setAddOpen(false);
     } catch (e) {
-      toast.error('Failed to add vehicle');
+      toast.error(getAxiosErrorMessage(e, 'Failed to add vehicle'));
     }
   };
 
@@ -57,7 +57,7 @@ export default function VehiclesPage() {
       toast.success('Vehicle updated');
       setEditVehicle(null);
     } catch (e) {
-      toast.error('Failed to update vehicle');
+      toast.error(getAxiosErrorMessage(e, 'Failed to update vehicle'));
     }
   };
 
