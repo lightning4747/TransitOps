@@ -142,14 +142,24 @@ export default function LoginPage() {
           </form>
 
           {/* Demo hint */}
-          {USE_MOCK && (
+          {USE_MOCK ? (
             <div className="mt-6 rounded-lg bg-slate-50 p-3">
-              <p className="mb-1 text-xs font-semibold text-slate-600">Demo accounts:</p>
+              <p className="mb-1 text-xs font-semibold text-slate-600">Demo accounts (Mock mode):</p>
               <ul className="space-y-0.5 text-xs text-slate-500">
                 <li>fleet@transitops.com / fleet123</li>
                 <li>driver@transitops.com / driver123</li>
                 <li>safety@transitops.com / safety123</li>
                 <li>finance@transitops.com / finance123</li>
+              </ul>
+            </div>
+          ) : (
+            <div className="mt-6 rounded-lg bg-slate-50 p-3">
+              <p className="mb-1 text-xs font-semibold text-slate-600">Demo accounts (Database mode):</p>
+              <ul className="space-y-0.5 text-xs text-slate-500">
+                <li>fleet@transitops.dev / password123 (Fleet Manager)</li>
+                <li>driver@transitops.dev / password123 (Driver)</li>
+                <li>safety@transitops.dev / password123 (Safety Officer)</li>
+                <li>analyst@transitops.dev / password123 (Financial Analyst)</li>
               </ul>
             </div>
           )}
