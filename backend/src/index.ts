@@ -6,6 +6,12 @@ import { errorHandler } from "./middleware/errorHandler";
 import authRoutes from "./modules/auth/auth.routes";
 import vehicleRoutes from "./modules/vehicles/vehicle.routes";
 import driverRoutes from "./modules/drivers/driver.routes";
+import dashboardRoutes from "./modules/dashboard/dashboard.routes";
+import maintenanceRoutes from "./modules/maintenance/maintenance.routes";
+import tripRoutes from "./modules/trips/trip.routes";
+import fuelRoutes from "./modules/fuel/fuel.routes";
+import expenseRoutes from "./modules/expenses/expense.routes";
+import reportRoutes from "./modules/reports/report.routes";
 import prisma from "./lib/prisma";
 
 dotenv.config();
@@ -23,6 +29,12 @@ app.use(auth);
 app.use("/api/auth", authRoutes);
 app.use("/api/vehicles", vehicleRoutes);
 app.use("/api/drivers", driverRoutes);
+app.use("/api/dashboard", dashboardRoutes);
+app.use("/api/maintenance-logs", maintenanceRoutes);
+app.use("/api/trips", tripRoutes);
+app.use("/api/fuel-logs", fuelRoutes);
+app.use("/api/expenses", expenseRoutes);
+app.use("/api/reports", reportRoutes);
 
 // Simple health check / test route (protected)
 app.get("/api/health", (req, res) => {
