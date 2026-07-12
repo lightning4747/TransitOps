@@ -2,51 +2,44 @@ import type { RoiReport } from '../../types';
 import { formatCurrency } from '../../lib/utils';
 
 interface Props {
-  data: RoiReport[];
+  data: RoiReport;
 }
 
 export default function RoiTable({ data }: Props) {
-  if (data.length === 0) {
-    return <p className="text-sm text-slate-400">No vehicle data available.</p>;
-  }
-
   return (
-    <div className="overflow-x-auto">
-      <table className="min-w-full text-sm">
-        <thead>
-          <tr className="text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-            <th className="pb-2 pr-4">Vehicle</th>
-            <th className="pb-2 pr-4">Acq. Cost</th>
-            <th className="pb-2 pr-4">Fuel + Maint.</th>
-            <th className="pb-2">ROI</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-100">
-          {data.map((row) => (
-            <tr key={row.vehicleId}>
-              <td className="py-2 pr-4">
-                <p className="font-medium text-slate-800">{row.vehicleName}</p>
-                <p className="text-xs text-slate-400">{row.regNumber}</p>
-              </td>
-              <td className="py-2 pr-4 text-slate-700">{formatCurrency(row.acquisitionCost)}</td>
-              <td className="py-2 pr-4 text-slate-700">
-                {formatCurrency(row.fuelCost + row.maintenanceCost)}
-              </td>
-              <td className="py-2">
-                {!row.revenueTracked ? (
-                  <span className="text-xs text-slate-400 italic">N/A — revenue not configured</span>
-                ) : row.roi !== null ? (
-                  <span className={row.roi >= 0 ? 'font-semibold text-emerald-600' : 'font-semibold text-red-600'}>
-                    {(row.roi * 100).toFixed(1)}%
-                  </span>
-                ) : (
-                  <span className="text-xs text-slate-400">—</span>
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="space-y-2 text-sm">
+      <div className="flex justify-between rounded-lg bg-slate-50 px-3 py-2">
+        <span className="text-slate-600">Acquisition Cost</span>
+        <span className="font-semibold text-slate-800">{formatCurrency(data.acquisitionCost)}</span>
+      </div>
+      {data.revenueTracked && (
+        <div className="flex justify-between rounded-lg bg-slate-50 px-3 py-2">
+          <span className="text-slate-600">Revenue</span>
+          <span className="font-semibold text-emerald-600">{formatCurrency(data.revenue)}</span>
+        </div>
+      )}
+      <div className="flex justify-between rounded-lg bg-slate-50 px-3 py-2">
+        <span className="text-slate-600">Fuel Cost</span>
+        <span className="font-semibold text-blue-600">{formatCurrency(data.fuelCost)}</span>
+      </div>
+      <div className="flex justify-between rounded-lg bg-slate-50 px-3 py-2">
+        <span className="text-slate-600">Maintenance Cost</span>
+        <span className="font-semibold text-amber-600">{formatCurrency(data.maintenanceCost)}</span>
+      </div>
+      <div className="flex justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 font-semibold">
+        <span className="text-slate-700">ROI</span>
+        <span>
+          {!data.revenueTracked ? (
+            <span className="text-xs text-slate-400 italic font-normal">N/A — revenue not configured</span>
+          ) : data.roi !== null ? (
+            <span className={data.roi >= 0 ? 'text-emerald-600' : 'text-red-600'}>
+              {data.roi.toFixed(2)}%
+            </span>
+          ) : (
+            <span className="text-slate-400">—</span>
+          )}
+        </span>
+      </div>
     </div>
   );
 }

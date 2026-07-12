@@ -161,31 +161,31 @@ export const mockDashboardStats: DashboardStats = {
 };
 
 // ─── Reports ──────────────────────────────────────────────────────────────────
-export const mockFuelEfficiency: FuelEfficiencyReport[] = [
-  { vehicleId: 'v1', vehicleName: 'Van-01', regNumber: 'TN-01-AB-1234', totalDistance: 270, totalFuel: 80, efficiency: 3.38 },
-  { vehicleId: 'v2', vehicleName: 'Truck-01', regNumber: 'TN-02-CD-5678', totalDistance: 346, totalFuel: 75, efficiency: 4.61 },
-  { vehicleId: 'v4', vehicleName: 'Van-02', regNumber: 'TN-04-GH-3456', totalDistance: 0, totalFuel: 30, efficiency: 0 },
-];
-
-export const mockUtilization: UtilizationReport = {
-  fleetUtilization: 25,
-  onTrip: 1,
-  available: 2,
-  inShop: 1,
-  retired: 1,
-  total: 4,
+export const mockFuelEfficiency: FuelEfficiencyReport = {
+  vehicleId: null,
+  totalDistance: 270,
+  totalLiters: 80,
+  fuelEfficiency: 3.38,
 };
 
-export const mockOperationalCost: OperationalCostReport[] = [
-  { vehicleId: 'v1', vehicleName: 'Van-01', regNumber: 'TN-01-AB-1234', fuelCost: 9600, maintenanceCost: 18000, expenseCost: 450, totalCost: 28050 },
-  { vehicleId: 'v2', vehicleName: 'Truck-01', regNumber: 'TN-02-CD-5678', fuelCost: 9000, maintenanceCost: 8500, expenseCost: 800, totalCost: 18300 },
-  { vehicleId: 'v3', vehicleName: 'Bike-01', regNumber: 'TN-03-EF-9012', fuelCost: 0, maintenanceCost: 45000, expenseCost: 0, totalCost: 45000 },
-  { vehicleId: 'v4', vehicleName: 'Van-02', regNumber: 'TN-04-GH-3456', fuelCost: 3600, maintenanceCost: 0, expenseCost: 200, totalCost: 3800 },
-];
+export const mockUtilization: UtilizationReport = {
+  utilization: 25,
+};
 
-export const mockRoi: RoiReport[] = [
-  { vehicleId: 'v1', vehicleName: 'Van-01', regNumber: 'TN-01-AB-1234', acquisitionCost: 850000, revenue: 0, maintenanceCost: 18000, fuelCost: 9600, roi: null, revenueTracked: false },
-  { vehicleId: 'v2', vehicleName: 'Truck-01', regNumber: 'TN-02-CD-5678', acquisitionCost: 2400000, revenue: 0, maintenanceCost: 8500, fuelCost: 9000, roi: null, revenueTracked: false },
-  { vehicleId: 'v3', vehicleName: 'Bike-01', regNumber: 'TN-03-EF-9012', acquisitionCost: 120000, revenue: 0, maintenanceCost: 45000, fuelCost: 0, roi: null, revenueTracked: false },
-  { vehicleId: 'v4', vehicleName: 'Van-02', regNumber: 'TN-04-GH-3456', acquisitionCost: 950000, revenue: 0, maintenanceCost: 0, fuelCost: 3600, roi: null, revenueTracked: false },
-];
+export const mockOperationalCost: OperationalCostReport = {
+  vehicleId: null,
+  fuelCost: 9600,
+  maintenanceCost: 18000,
+  expenseCost: 450,
+  totalCost: 28050,
+};
+
+export const mockRoi: RoiReport = {
+  vehicleId: null,
+  revenueTracked: false,
+  revenue: 0,
+  fuelCost: 9600,
+  maintenanceCost: 18000,
+  acquisitionCost: 850000,
+  roi: null,
+};

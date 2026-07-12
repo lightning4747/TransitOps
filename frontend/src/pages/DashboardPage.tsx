@@ -4,13 +4,11 @@ import KpiCard from '../components/dashboard/KpiCard';
 import FleetStatusChart from '../components/dashboard/FleetStatusChart';
 import FilterBar from '../components/dashboard/FilterBar';
 import { useDashboard } from '../hooks/useDashboard';
-import { useUtilization } from '../hooks/useReports';
 import type { DashboardFilters } from '../api/dashboard';
 
 export default function DashboardPage() {
   const [filters, setFilters] = useState<DashboardFilters>({});
   const { data: stats, isLoading } = useDashboard(filters);
-  const { data: utilization } = useUtilization();
 
   return (
     <div className="space-y-6">
@@ -80,8 +78,8 @@ export default function DashboardPage() {
       <div className="grid gap-4 lg:grid-cols-2">
         <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
           <h2 className="mb-4 text-base font-semibold text-slate-900">Fleet Status Breakdown</h2>
-          {utilization ? (
-            <FleetStatusChart data={utilization} />
+          {stats ? (
+            <FleetStatusChart data={stats} />
           ) : (
             <div className="flex h-48 items-center justify-center text-sm text-slate-400">
               Loading chart…

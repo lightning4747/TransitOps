@@ -7,8 +7,8 @@ import type {
   RoiReport,
 } from '../types';
 
-export const getFuelEfficiency = async (vehicleId?: string): Promise<FuelEfficiencyReport[]> => {
-  const { data } = await client.get<FuelEfficiencyReport[]>('/reports/fuel-efficiency', {
+export const getFuelEfficiency = async (vehicleId?: string): Promise<FuelEfficiencyReport> => {
+  const { data } = await client.get<FuelEfficiencyReport>('/reports/fuel-efficiency', {
     params: vehicleId ? { vehicleId } : undefined,
   });
   return data;
@@ -19,15 +19,15 @@ export const getUtilization = async (): Promise<UtilizationReport> => {
   return data;
 };
 
-export const getOperationalCost = async (vehicleId?: string): Promise<OperationalCostReport[]> => {
-  const { data } = await client.get<OperationalCostReport[]>('/reports/operational-cost', {
+export const getOperationalCost = async (vehicleId?: string): Promise<OperationalCostReport> => {
+  const { data } = await client.get<OperationalCostReport>('/reports/operational-cost', {
     params: vehicleId ? { vehicleId } : undefined,
   });
   return data;
 };
 
-export const getRoi = async (vehicleId?: string): Promise<RoiReport[]> => {
-  const { data } = await client.get<RoiReport[]>('/reports/roi', {
+export const getRoi = async (vehicleId?: string): Promise<RoiReport> => {
+  const { data } = await client.get<RoiReport>('/reports/roi', {
     params: vehicleId ? { vehicleId } : undefined,
   });
   return data;

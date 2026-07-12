@@ -122,27 +122,18 @@ export interface DashboardStats {
 // ─── Reports ─────────────────────────────────────────────────────────────────
 
 export interface FuelEfficiencyReport {
-  vehicleId: string;
-  vehicleName: string;
-  regNumber: string;
+  vehicleId: string | null;
   totalDistance: number;
-  totalFuel: number;
-  efficiency: number; // km/L
+  totalLiters: number;
+  fuelEfficiency: number; // km/L
 }
 
 export interface UtilizationReport {
-  fleetUtilization: number;
-  onTrip: number;
-  available: number;
-  inShop: number;
-  retired: number;
-  total: number;
+  utilization: number; // percentage
 }
 
 export interface OperationalCostReport {
-  vehicleId: string;
-  vehicleName: string;
-  regNumber: string;
+  vehicleId: string | null;
   fuelCost: number;
   maintenanceCost: number;
   expenseCost: number;
@@ -150,15 +141,13 @@ export interface OperationalCostReport {
 }
 
 export interface RoiReport {
-  vehicleId: string;
-  vehicleName: string;
-  regNumber: string;
-  acquisitionCost: number;
-  revenue: number;
-  maintenanceCost: number;
-  fuelCost: number;
-  roi: number | null;
+  vehicleId: string | null;
   revenueTracked: boolean;
+  revenue: number;
+  fuelCost: number;
+  maintenanceCost: number;
+  acquisitionCost: number;
+  roi: number | null;
 }
 
 // ─── Auth ────────────────────────────────────────────────────────────────────

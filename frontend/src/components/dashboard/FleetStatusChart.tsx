@@ -1,8 +1,8 @@
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import type { UtilizationReport } from '../../types';
+import type { DashboardStats } from '../../types';
 
 interface Props {
-  data: UtilizationReport;
+  data: DashboardStats;
 }
 
 const COLORS: Record<string, string> = {
@@ -13,11 +13,17 @@ const COLORS: Record<string, string> = {
 };
 
 export default function FleetStatusChart({ data }: Props) {
+  // Derive per-status counts from dashboard stats
+  const retired = data.activeVehicles > 0
+    ? 0  // activeVehicles excludes retired; retired count not directly in dashboard
+    : 0;
+  const onTrip = data.activeVehicles - data.availableVehicles - data.vehiclesInMaintenance;
+
   const chartData = [
-    { name: 'On Trip', value: data.onTrip },
-    { name: 'Available', value: data.available },
-    { name: 'In Shop', value: data.inShop },
-    { name: 'Retired', value: data.retired },
+    { name: 'On Trip', value: Math.max(0, onTrip) },
+    { name: 'Available', value: data.availableVehicles },
+    { name: 'In Shop', value: data.vehiclesInMaintenance },
+    { name: 'Retired', value: retired },
   ].filter((d) => d.value > 0);
 
   if (chartData.length === 0) {
