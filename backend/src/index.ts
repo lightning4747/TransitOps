@@ -5,6 +5,7 @@ import { auth } from "./middleware/auth";
 import { errorHandler } from "./middleware/errorHandler";
 import authRoutes from "./modules/auth/auth.routes";
 import vehicleRoutes from "./modules/vehicles/vehicle.routes";
+import driverRoutes from "./modules/drivers/driver.routes";
 import prisma from "./lib/prisma";
 
 dotenv.config();
@@ -21,6 +22,7 @@ app.use(auth);
 // Mount routes
 app.use("/api/auth", authRoutes);
 app.use("/api/vehicles", vehicleRoutes);
+app.use("/api/drivers", driverRoutes);
 
 // Simple health check / test route (protected)
 app.get("/api/health", (req, res) => {
