@@ -1,25 +1,34 @@
-# TransitOps — Backend Design
+# Backend
 
-Node.js + Express + TypeScript + Prisma. Field/enum names match `db-design.md` exactly — do not rename.
+## Stack
 
-## Folder structure
+- **Runtime**: Node.js + TypeScript
+- **Framework**: Express
+- **ORM**: Prisma (PostgreSQL)
+- **Auth**: JSON Web Tokens (jsonwebtoken) + bcrypt
+- **Validation**: Zod
+- **Environment**: `.env` — `DATABASE_URL`, `JWT_SECRET`, `PORT`
+
+---
+
+## Folder Structure
 
 ```
-src/
-  index.ts
-  prisma/
-    schema.prisma
-    seed.ts
+backend/src/
+  index.ts                  # Express app bootstrap, route mounting, middleware registration
+  lib/
+    prisma.ts               # Singleton PrismaClient instance
+    eligibility.ts          # Shared dispatchability checks (vehicle status, driver status + licence expiry)
   middleware/
-    auth.ts          # verifies JWT, attaches req.user
-    rbac.ts           # requireRole(...roles)
-    errorHandler.ts
-    validate.ts        # zod schema wrapper
+    auth.ts                 # JWT verification; ?token= query param fallback for file downloads
+    rbac.ts                 # requireRole(...roles) factory
+    errorHandler.ts         # AppError class + global Express error handler
+    validate.ts             # Zod schema middleware wrapper
   modules/
     auth/
       auth.routes.ts
       auth.service.ts
-      auth.schema.ts    # zod
+      auth.schema.ts
     vehicles/
       vehicle.routes.ts
       vehicle.service.ts
@@ -30,176 +39,463 @@ src/
       driver.schema.ts
     trips/
       trip.routes.ts
-      trip.service.ts     # dispatch/complete/cancel transactions live here
+      trip.service.ts
       trip.schema.ts
     maintenance/
       maintenance.routes.ts
       maintenance.service.ts
+      maintenance.schema.ts
     fuel/
       fuel.routes.ts
       fuel.service.ts
+      fuel.schema.ts
     expenses/
       expense.routes.ts
       expense.service.ts
+      expense.schema.ts
     reports/
       report.routes.ts
-      report.service.ts   # all computed-value aggregations
+      report.service.ts
     dashboard/
       dashboard.routes.ts
       dashboard.service.ts
-  lib/
-    prisma.ts          # singleton PrismaClient
-    eligibility.ts      # shared computed-eligibility helpers
+  prisma/
+    schema.prisma
+    seed.ts
+    migrations/
 ```
 
-## Auth & RBAC
+---
 
-- `POST /api/auth/login` — email + password → JWT (contains `userId`, `role`). No self-registration endpoint; users are seeded/created by a Fleet Manager via `POST /api/users` (admin-only).
-- `middleware/auth.ts` — verifies JWT on every route except `/auth/login`. Attaches `req.user = { id, role }`.
-- `middleware/rbac.ts` — `requireRole('FLEET_MANAGER', 'SAFETY_OFFICER')` used per-route. Role → permitted actions:
+## Middleware
 
-| Action | FLEET_MANAGER | DRIVER | SAFETY_OFFICER | FINANCIAL_ANALYST |
-|---|---|---|---|---|
-| Vehicle CRUD | ✅ | ❌ | read-only | read-only |
-| Driver CRUD | ✅ | ❌ | ✅ (compliance fields) | read-only |
-| Create/Dispatch/Complete/Cancel Trip | ✅ | ✅ | read-only | read-only |
-| Maintenance Log CRUD | ✅ | ❌ | read-only | read-only |
-| Fuel/Expense entry | ✅ | ✅ (own trips) | read-only | read-only |
-| Reports/Analytics | read-only | ❌ | read-only | ✅ |
-| Dashboard | ✅ | ✅ (limited) | ✅ | ✅ |
+### Auth (`middleware/auth.ts`)
 
-This table is authoritative — if frontend hides a button, backend must still enforce it server-side.
+Reads the `Authorization: Bearer <token>` header and verifies the JWT. If the header is absent, it falls back to the `?token=<token>` query parameter — this fallback exists because browsers cannot set `Authorization` headers on navigation requests (e.g. `window.open()` for CSV downloads). On success, attaches `req.user = { id, role }` and calls `next()`. On failure, forwards an `AppError` with status 401.
 
-## Computed eligibility (matches db-design.md §Computed values)
+### RBAC (`middleware/rbac.ts`)
 
-`lib/eligibility.ts`:
+Exports `requireRole(...roles: Role[])`. Returns an Express middleware that checks `req.user.role` against the allowed set. Returns 403 if the role is not permitted.
 
+### Error Handler (`middleware/errorHandler.ts`)
+
+Defines the `AppError` class:
 ```ts
-function isDriverDispatchEligible(driver: Driver): boolean {
-  return driver.status === 'AVAILABLE' && driver.licenseExpiry > new Date();
-}
-
-function isVehicleDispatchEligible(vehicle: Vehicle): boolean {
-  return vehicle.status === 'AVAILABLE';
+class AppError extends Error {
+  statusCode: number;
+  code: string;
 }
 ```
 
-Used in:
-- `GET /api/vehicles?dispatchable=true` and `GET /api/drivers?dispatchable=true` — pool endpoints for the Trip creation form dropdowns. Filtering happens in the query/service layer, not in the DB (expiry check can't be a stored WHERE against a stale column).
-- `trip.service.ts::dispatchTrip()` — re-validated server-side even if the frontend only shows eligible options, since state may have changed between page load and submit (race condition guard).
+The global error handler converts any `AppError` (or unexpected error) into a consistent JSON response:
+```json
+{ "error": { "code": "ERROR_CODE", "message": "Human readable message" } }
+```
 
-## Business rule enforcement — Trip service (transactional)
+### Validate (`middleware/validate.ts`)
 
-All four functions below wrap Prisma operations in `prisma.$transaction(...)` so partial state updates never happen.
+Wraps a Zod schema into an Express middleware. Parses `req.body` against the schema and calls `next()` on success, or forwards a 400 `AppError` with Zod's formatted error messages on failure.
 
-### `createTrip(input)`
-- Validates cargoWeight > 0, plannedDistance > 0 (zod schema).
-- Creates Trip with status = DRAFT. No status changes to Vehicle/Driver yet.
+---
 
-### `dispatchTrip(tripId)`
-1. Load trip, vehicle, driver.
-2. Validate: `trip.status === 'DRAFT'`.
-3. Validate: `isVehicleDispatchEligible(vehicle)` → else 409 "Vehicle not available".
-4. Validate: `isDriverDispatchEligible(driver)` → else 409 "Driver not eligible (license expired, suspended, or unavailable)".
-5. Validate: `trip.cargoWeight <= vehicle.maxLoadKg` → else 400 "Cargo exceeds vehicle capacity".
-6. Transaction: set `trip.status = DISPATCHED`, `trip.dispatchedAt = now`, `vehicle.status = ON_TRIP`, `driver.status = ON_TRIP`.
+## RBAC Permissions
 
-### `completeTrip(tripId, { endOdometer, fuelConsumed })`
-1. Validate `trip.status === 'DISPATCHED'`.
-2. Transaction: set `trip.status = COMPLETED`, `trip.completedAt = now`, `trip.endOdometer`, `trip.fuelConsumed`, `vehicle.status = AVAILABLE`, `vehicle.odometer = endOdometer`, `driver.status = AVAILABLE`.
-3. Optionally auto-create a FuelLog row from `fuelConsumed` if a cost-per-liter default is provided — otherwise require a separate fuel log entry (decide in sprint planning; default: require separate entry to keep this function single-purpose).
+| Endpoint | FLEET_MANAGER | DRIVER | SAFETY_OFFICER | FINANCIAL_ANALYST |
+|---|:---:|:---:|:---:|:---:|
+| `GET /vehicles`, `GET /vehicles/:id` | ✅ | ✅ | ✅ | ✅ |
+| `POST /vehicles` | ✅ | ❌ | ❌ | ❌ |
+| `PATCH /vehicles/:id` | ✅ | ❌ | ❌ | ❌ |
+| `GET /drivers`, `GET /drivers/:id` | ✅ | ✅ | ✅ | ✅ |
+| `POST /drivers` | ✅ | ❌ | ❌ | ❌ |
+| `PATCH /drivers/:id` | ✅ | ❌ | ✅ | ❌ |
+| `GET /trips`, `GET /trips/:id` | ✅ | ✅ | ✅ | ✅ |
+| `POST /trips` | ✅ | ✅ | ❌ | ❌ |
+| `POST /trips/:id/dispatch` | ✅ | ✅ | ❌ | ❌ |
+| `POST /trips/:id/complete` | ✅ | ✅ | ❌ | ❌ |
+| `POST /trips/:id/cancel` | ✅ | ✅ | ❌ | ❌ |
+| `GET /maintenance-logs` | ✅ | ✅ | ✅ | ✅ |
+| `POST /maintenance-logs` | ✅ | ❌ | ❌ | ❌ |
+| `POST /maintenance-logs/:id/close` | ✅ | ❌ | ❌ | ❌ |
+| `GET /fuel-logs` | ✅ | ✅ | ✅ | ✅ |
+| `POST /fuel-logs` | ✅ | ✅ | ✅ | ✅ |
+| `GET /expenses` | ✅ | ✅ | ✅ | ✅ |
+| `POST /expenses` | ✅ | ✅ | ✅ | ✅ |
+| `GET /dashboard` | ✅ | ✅ | ✅ | ✅ |
+| `GET /reports/*` | ✅ | ❌ | ✅ | ✅ |
 
-### `cancelTrip(tripId)`
-1. Validate `trip.status === 'DISPATCHED'` (cancelling a DRAFT trip is just a delete/status=CANCELLED with no side effects, since nothing was assigned).
-2. Transaction: set `trip.status = CANCELLED`, `trip.cancelledAt = now`, `vehicle.status = AVAILABLE`, `driver.status = AVAILABLE`.
+Report endpoints are guarded by `reportRoles = [FLEET_MANAGER, SAFETY_OFFICER, FINANCIAL_ANALYST]`.
 
-## Business rule enforcement — Maintenance service
+---
 
-### `createMaintenanceLog(vehicleId, input)`
-1. Validate vehicle exists and `vehicle.status !== 'ON_TRIP'` → else 409 "Cannot service a vehicle currently on trip".
-2. Transaction: create MaintenanceLog with status = ACTIVE, set `vehicle.status = IN_SHOP`.
+## API Reference
 
-### `closeMaintenanceLog(logId)`
-1. Transaction: set `MaintenanceLog.status = CLOSED`, `closedAt = now`.
-2. Set `vehicle.status = AVAILABLE` **unless** `vehicle.status === RETIRED` (retired vehicles never return to Available — explicit guard per spec rule).
+All endpoints are prefixed with `/api`. All responses are `application/json` unless noted.
 
-## Validation layer
+### Auth
 
-All request bodies validated with `zod` schemas per module before hitting the service layer. Reject with 400 + field-level error messages on failure. This is the single point where field name typos would surface — keeps route handlers thin.
+#### `POST /api/auth/login`
 
-## Reports & Analytics service (`report.service.ts`)
+**Request body:**
+```json
+{ "email": "string", "password": "string" }
+```
 
-Implements the exact formulas from `db-design.md` §Computed values:
-
-- `GET /api/reports/fuel-efficiency?vehicleId=` → per-vehicle or fleet-wide
-- `GET /api/reports/utilization` → fleet-wide %, optionally filtered by region/type
-- `GET /api/reports/operational-cost?vehicleId=`
-- `GET /api/reports/roi?vehicleId=` — returns `null`/flag if Revenue isn't tracked, per the open decision noted in db-design.md. Do not silently default to 0 without a `revenueTracked: false` flag in the response, so frontend can render "N/A — revenue not configured" instead of a misleading 0%.
-- `GET /api/reports/export.csv` — same data as above, streamed as CSV (use `csv-stringify` or similar)
-
-## Dashboard service (`dashboard.service.ts`)
-
-`GET /api/dashboard?vehicleType=&status=&region=`
-Returns:
-```ts
+**Response:**
+```json
 {
-  activeVehicles: number,       // status != RETIRED
-  availableVehicles: number,     // status == AVAILABLE
-  vehiclesInMaintenance: number, // status == IN_SHOP
-  activeTrips: number,           // status == DISPATCHED
-  pendingTrips: number,          // status == DRAFT
-  driversOnDuty: number,         // status == ON_TRIP
-  fleetUtilization: number       // % per db-design formula
+  "token": "string",
+  "user": { "id": "string", "name": "string", "email": "string", "role": "Role" }
 }
 ```
-All filters applied as WHERE clauses before aggregation, not post-filtered in memory.
 
-## Error handling convention
+---
 
-- 400 — validation failure (zod)
-- 401 — missing/invalid JWT
-- 403 — role not permitted
-- 404 — resource not found
-- 409 — business rule conflict (e.g. dispatch to unavailable vehicle)
-- All errors return `{ error: { code, message, fields? } }` — consistent shape for frontend to parse.
+### Vehicles
 
-## API endpoint summary
+#### `GET /api/vehicles`
 
-```
-POST   /api/auth/login
-GET    /api/dashboard
+**Query params:**
+- `dispatchable=true` — returns only vehicles with status `AVAILABLE`
+- `type=string` — filter by vehicle type
+- `region=string` — filter by region
 
-GET    /api/vehicles            (filters: type, status, region, dispatchable)
-POST   /api/vehicles             (FLEET_MANAGER)
-GET    /api/vehicles/:id
-PATCH  /api/vehicles/:id         (FLEET_MANAGER — cannot directly set status; status only changes via trip/maintenance flows)
+**Response:** `Vehicle[]`
 
-GET    /api/drivers              (filters: status, dispatchable)
-POST   /api/drivers               (FLEET_MANAGER)
-GET    /api/drivers/:id
-PATCH  /api/drivers/:id           (FLEET_MANAGER, SAFETY_OFFICER — compliance fields only)
+#### `POST /api/vehicles`
 
-GET    /api/trips                (filters: status, driverId, vehicleId)
-POST   /api/trips                 (create DRAFT)
-POST   /api/trips/:id/dispatch
-POST   /api/trips/:id/complete
-POST   /api/trips/:id/cancel
-
-GET    /api/maintenance-logs     (filters: vehicleId, status)
-POST   /api/maintenance-logs
-POST   /api/maintenance-logs/:id/close
-
-GET    /api/fuel-logs            (filters: vehicleId, dateRange)
-POST   /api/fuel-logs
-
-GET    /api/expenses             (filters: vehicleId, dateRange)
-POST   /api/expenses
-
-GET    /api/reports/fuel-efficiency
-GET    /api/reports/utilization
-GET    /api/reports/operational-cost
-GET    /api/reports/roi
-GET    /api/reports/export.csv
+**Request body:**
+```json
+{
+  "regNumber": "string",
+  "name": "string",
+  "type": "string",
+  "maxLoadKg": "number",
+  "acquisitionCost": "number",
+  "region": "string (optional)"
+}
 ```
 
-**Important:** `PATCH /api/vehicles/:id` and `PATCH /api/drivers/:id` must explicitly reject a `status` field in the request body (strip it or 400 if present) — status is only ever mutated by the trip/maintenance service functions above. This is the most common conflict point between "generic CRUD" and "business rule enforcement" — call this out to whoever builds the vehicle/driver routes.
+**Response:** `Vehicle` — created with `status = AVAILABLE`.
+
+#### `GET /api/vehicles/:id`
+
+**Response:** `Vehicle`
+
+#### `PATCH /api/vehicles/:id`
+
+**Request body (all fields optional):**
+```json
+{
+  "name": "string",
+  "type": "string",
+  "maxLoadKg": "number",
+  "acquisitionCost": "number",
+  "region": "string"
+}
+```
+
+The `status` field is explicitly stripped from the update payload. If the request body contains a `status` key, the handler returns `400 DIRECT_STATUS_UPDATE_FORBIDDEN`.
+
+**Response:** Updated `Vehicle`.
+
+---
+
+### Drivers
+
+#### `GET /api/drivers`
+
+**Query params:**
+- `dispatchable=true` — returns only drivers with status `AVAILABLE` and a non-expired licence
+
+**Response:** `Driver[]`
+
+#### `POST /api/drivers`
+
+**Request body:**
+```json
+{
+  "name": "string",
+  "licenseNumber": "string",
+  "licenseCategory": "string",
+  "licenseExpiry": "ISO date string",
+  "contactNumber": "string",
+  "safetyScore": "number (optional)"
+}
+```
+
+**Response:** `Driver` — created with `status = AVAILABLE`.
+
+#### `GET /api/drivers/:id`
+
+**Response:** `Driver`
+
+#### `PATCH /api/drivers/:id`
+
+**Request body (all fields optional):**
+```json
+{
+  "name": "string",
+  "contactNumber": "string",
+  "safetyScore": "number",
+  "licenseExpiry": "ISO date string",
+  "licenseCategory": "string"
+}
+```
+
+**Response:** Updated `Driver`.
+
+---
+
+### Trips
+
+#### `GET /api/trips`
+
+**Query params:**
+- `status=TripStatus`
+- `vehicleId=string`
+- `driverId=string`
+
+**Response:** `Trip[]`
+
+#### `POST /api/trips`
+
+**Request body:**
+```json
+{
+  "source": "string",
+  "destination": "string",
+  "vehicleId": "string",
+  "driverId": "string",
+  "cargoWeight": "number",
+  "plannedDistance": "number"
+}
+```
+
+**Response:** `Trip` — created with `status = DRAFT`.
+
+#### `GET /api/trips/:id`
+
+**Response:** `Trip`
+
+#### `POST /api/trips/:id/dispatch`
+
+Transitions the trip from `DRAFT` to `DISPATCHED`. See [Dispatch Business Rules](#dispatch-business-rules) below.
+
+**Response:** Updated `Trip` with `status = DISPATCHED`.
+
+**Side effects:** `vehicle.status → ON_TRIP`, `driver.status → ON_TRIP`.
+
+#### `POST /api/trips/:id/complete`
+
+**Request body:**
+```json
+{ "endOdometer": "number", "fuelConsumed": "number" }
+```
+
+**Response:** Updated `Trip` with `status = COMPLETED`.
+
+**Side effects:** `vehicle.status → AVAILABLE`, `driver.status → AVAILABLE`, `vehicle.odometer` updated to `endOdometer`.
+
+#### `POST /api/trips/:id/cancel`
+
+**Response:** Updated `Trip` with `status = CANCELLED`.
+
+**Side effects:** `vehicle.status → AVAILABLE`, `driver.status → AVAILABLE`.
+
+---
+
+### Maintenance Logs
+
+#### `GET /api/maintenance-logs`
+
+**Query params:**
+- `vehicleId=string`
+- `status=MaintenanceStatus`
+
+**Response:** `MaintenanceLog[]`
+
+#### `POST /api/maintenance-logs`
+
+**Request body:**
+```json
+{
+  "vehicleId": "string",
+  "description": "string",
+  "cost": "number (optional)"
+}
+```
+
+**Response:** `MaintenanceLog` — created with `status = ACTIVE`.
+
+**Side effect:** `vehicle.status → IN_SHOP`.
+
+#### `POST /api/maintenance-logs/:id/close`
+
+**Response:** Updated `MaintenanceLog` with `status = CLOSED`.
+
+**Side effect:** `vehicle.status → AVAILABLE`.
+
+---
+
+### Fuel Logs
+
+#### `GET /api/fuel-logs`
+
+**Query params:**
+- `vehicleId=string`
+- `startDate=ISO date string`
+- `endDate=ISO date string`
+
+**Response:** `FuelLog[]`
+
+#### `POST /api/fuel-logs`
+
+**Request body:**
+```json
+{ "vehicleId": "string", "liters": "number", "cost": "number", "date": "ISO date string" }
+```
+
+**Response:** `FuelLog`
+
+---
+
+### Expenses
+
+#### `GET /api/expenses`
+
+**Query params:**
+- `vehicleId=string`
+- `startDate=ISO date string`
+- `endDate=ISO date string`
+
+**Response:** `Expense[]`
+
+#### `POST /api/expenses`
+
+**Request body:**
+```json
+{ "vehicleId": "string", "type": "string", "amount": "number", "date": "ISO date string" }
+```
+
+`type` is a free-text string. Conventional values are: `Toll`, `Parking`, `Fine`, `Cleaning`, `Other`, `Revenue`.
+
+**Response:** `Expense`
+
+---
+
+### Dashboard
+
+#### `GET /api/dashboard`
+
+**Query params:**
+- `vehicleType=string`
+- `status=VehicleStatus`
+- `region=string`
+
+**Response:**
+```json
+{
+  "activeVehicles": "number",
+  "availableVehicles": "number",
+  "vehiclesInMaintenance": "number",
+  "activeTrips": "number",
+  "pendingTrips": "number",
+  "driversOnDuty": "number",
+  "fleetUtilization": "number"
+}
+```
+
+---
+
+### Reports
+
+All report endpoints require `FLEET_MANAGER`, `SAFETY_OFFICER`, or `FINANCIAL_ANALYST` role.
+
+#### `GET /api/reports/fuel-efficiency`
+
+**Query params:** `vehicleId=string` (optional — omit for fleet-wide aggregate)
+
+**Response:**
+```json
+{ "vehicleId": "string", "totalDistance": "number", "totalLiters": "number", "fuelEfficiency": "number" }
+```
+
+`fuelEfficiency` is km per litre.
+
+#### `GET /api/reports/utilization`
+
+**Query params:** `region=string`, `type=string` (both optional)
+
+**Response:**
+```json
+{ "utilization": "number" }
+```
+
+Percentage of non-retired vehicles currently with status `ON_TRIP`.
+
+#### `GET /api/reports/operational-cost`
+
+**Query params:** `vehicleId=string` (optional)
+
+**Response:**
+```json
+{
+  "vehicleId": "string",
+  "fuelCost": "number",
+  "maintenanceCost": "number",
+  "expenseCost": "number",
+  "totalCost": "number"
+}
+```
+
+#### `GET /api/reports/roi`
+
+**Query params:** `vehicleId=string` (optional)
+
+**Response:**
+```json
+{
+  "vehicleId": "string",
+  "revenueTracked": "boolean",
+  "revenue": "number",
+  "fuelCost": "number",
+  "maintenanceCost": "number",
+  "acquisitionCost": "number",
+  "roi": "number"
+}
+```
+
+Revenue is sourced from `Expense` records with `type = "Revenue"`. `roi` is expressed as a percentage.
+
+#### `GET /api/reports/export.csv`
+
+Returns a `text/csv` file attachment with one row per vehicle, containing key operational and cost metrics.
+
+**Auth:** Accepts either `Authorization: Bearer <token>` header or `?token=<jwt>` query parameter. The query parameter form exists to support `window.open()` from the browser, which cannot set custom headers.
+
+---
+
+## Dispatch Business Rules
+
+`POST /trips/:id/dispatch` enforces the following checks in order before committing any database writes:
+
+1. **Trip must be in DRAFT status** — returns `409 TRIP_NOT_DRAFT` otherwise.
+2. **Vehicle must be AVAILABLE** — returns `409 VEHICLE_NOT_AVAILABLE` otherwise.
+3. **Driver must be AVAILABLE and have a non-expired licence** — returns `409 DRIVER_NOT_AVAILABLE` otherwise.
+4. **Cargo weight must not exceed vehicle capacity** — `trip.cargoWeight <= vehicle.maxLoadKg` — returns `400 CARGO_OVERWEIGHT` otherwise.
+5. **Atomic transaction** — all three records (`Trip`, `Vehicle`, `Driver`) are updated in a single `prisma.$transaction` call: `trip.status → DISPATCHED`, `vehicle.status → ON_TRIP`, `driver.status → ON_TRIP`.
+
+---
+
+## Error Response Shape
+
+All errors — validation, auth, business rule violations, and unexpected exceptions — are returned in the following format:
+
+```json
+{
+  "error": {
+    "code": "ERROR_CODE",
+    "message": "Human readable message"
+  }
+}
+```

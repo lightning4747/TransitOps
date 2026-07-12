@@ -1,157 +1,177 @@
-# TransitOps — Database Design
+# Database Design
 
-PostgreSQL + Prisma. This doc is the source of truth for schema — field names here must match backend and frontend docs exactly.
+## Overview
 
-## Enums
+TransitOps uses PostgreSQL as its database, managed through Prisma ORM. The schema models a fleet management domain: vehicles, drivers, trips, maintenance, fuel consumption, and operational expenses.
 
-```
-Role            = FLEET_MANAGER | DRIVER | SAFETY_OFFICER | FINANCIAL_ANALYST
-VehicleStatus   = AVAILABLE | ON_TRIP | IN_SHOP | RETIRED
-DriverStatus    = AVAILABLE | ON_TRIP | OFF_DUTY | SUSPENDED
-TripStatus      = DRAFT | DISPATCHED | COMPLETED | CANCELLED
-MaintenanceStatus = ACTIVE | CLOSED
-```
+---
+
+## Enumerations
+
+### `Role`
+Assigned to every `User`. Controls access to routes via RBAC middleware.
+
+| Value | Description |
+|---|---|
+| `FLEET_MANAGER` | Full operational control — vehicles, drivers, trips, maintenance |
+| `DRIVER` | Can create and advance trips; read-only on everything else |
+| `SAFETY_OFFICER` | Can patch driver records and close maintenance logs; read reports |
+| `FINANCIAL_ANALYST` | Read-only + access to cost/ROI reports |
+
+### `VehicleStatus`
+
+| Value | Description |
+|---|---|
+| `AVAILABLE` | Ready to be dispatched |
+| `ON_TRIP` | Currently assigned to an active trip |
+| `IN_SHOP` | Under maintenance — cannot be dispatched |
+| `RETIRED` | Permanently decommissioned — excluded from utilisation metrics |
+
+### `DriverStatus`
+
+| Value | Description |
+|---|---|
+| `AVAILABLE` | Ready to be assigned |
+| `ON_TRIP` | Currently driving an active trip |
+| `OFF_DUTY` | Not available for dispatch |
+| `SUSPENDED` | Cannot be assigned to any trip |
+
+### `TripStatus`
+
+| Value | Description |
+|---|---|
+| `DRAFT` | Created but not yet dispatched |
+| `DISPATCHED` | Vehicle and driver committed; trip is active |
+| `COMPLETED` | Trip finished; odometer and fuel readings recorded |
+| `CANCELLED` | Trip aborted; vehicle and driver released |
+
+### `MaintenanceStatus`
+
+| Value | Description |
+|---|---|
+| `ACTIVE` | Vehicle is currently in the shop |
+| `CLOSED` | Maintenance completed; vehicle returned to `AVAILABLE` |
+
+---
 
 ## Tables
 
-### User
-| Field | Type | Constraints |
+### `Vehicle`
+
+| Column | Type | Notes |
 |---|---|---|
-| id | uuid | PK |
-| email | string | unique, not null |
-| passwordHash | string | not null |
-| name | string | not null |
-| role | Role | not null |
-| createdAt | timestamp | default now() |
+| `id` | `String` (UUID) | Primary key |
+| `regNumber` | `String` | Unique registration number |
+| `name` | `String` | Human-readable label |
+| `type` | `String` | e.g. `Truck`, `Van`, `Bus` |
+| `status` | `VehicleStatus` | System-managed — never set directly via PATCH |
+| `odometer` | `Decimal` | Current odometer reading (km). Updated on trip completion |
+| `maxLoadKg` | `Decimal` | Maximum cargo weight the vehicle can carry |
+| `acquisitionCost` | `Decimal` | Purchase price — used in ROI calculations |
+| `region` | `String?` | Optional geographic assignment |
+| `createdAt` | `DateTime` | Record creation timestamp |
+| `updatedAt` | `DateTime` | Last update timestamp |
 
-### Vehicle
-| Field | Type | Constraints |
+### `Driver`
+
+| Column | Type | Notes |
 |---|---|---|
-| id | uuid | PK |
-| regNumber | string | unique, not null |
-| name | string | not null |
-| type | string | not null (e.g. Van, Truck, Bike) |
-| maxLoadKg | decimal | not null, > 0 |
-| odometer | decimal | not null, default 0 |
-| acquisitionCost | decimal | not null |
-| status | VehicleStatus | not null, default AVAILABLE |
-| region | string | nullable — used for dashboard filter |
-| createdAt | timestamp | default now() |
-| updatedAt | timestamp | auto-update |
+| `id` | `String` (UUID) | Primary key |
+| `name` | `String` | Full name |
+| `licenseNumber` | `String` | Unique licence identifier |
+| `licenseCategory` | `String` | e.g. `Class A`, `Class C` |
+| `licenseExpiry` | `DateTime` | Must be in the future for the driver to be dispatchable |
+| `contactNumber` | `String` | Phone number |
+| `safetyScore` | `Float?` | Optional safety rating |
+| `status` | `DriverStatus` | System-managed — never set directly via PATCH |
+| `createdAt` | `DateTime` | Record creation timestamp |
+| `updatedAt` | `DateTime` | Last update timestamp |
 
-Notes:
-- `status` is the **stored** field, updated only by the transactional service functions in the backend (dispatch/complete/cancel/maintenance). It is never edited directly via a generic PATCH.
-- "Available for dispatch" is **not** the same as `status === AVAILABLE` — see Computed Availability section. The stored status still matters (IN_SHOP / RETIRED / ON_TRIP are stored and authoritative); only the *driver-side* expiry/suspension check is computed at query time, because that's a Driver-table condition, not a Vehicle one. So for Vehicle, status alone is authoritative.
+### `Trip`
 
-### Driver
-| Field | Type | Constraints |
+| Column | Type | Notes |
 |---|---|---|
-| id | uuid | PK |
-| userId | uuid | FK → User.id, nullable (a Driver may or may not have login access) |
-| name | string | not null |
-| licenseNumber | string | unique, not null |
-| licenseCategory | string | not null |
-| licenseExpiry | date | not null |
-| contactNumber | string | not null |
-| safetyScore | decimal | not null, default 100, range 0–100 |
-| status | DriverStatus | not null, default AVAILABLE |
-| createdAt | timestamp | default now() |
-| updatedAt | timestamp | auto-update |
+| `id` | `String` (UUID) | Primary key |
+| `source` | `String` | Departure location |
+| `destination` | `String` | Arrival location |
+| `status` | `TripStatus` | Lifecycle state |
+| `vehicleId` | `String` | FK → `Vehicle.id` |
+| `driverId` | `String` | FK → `Driver.id` |
+| `cargoWeight` | `Decimal` | Cargo weight for this trip (kg) |
+| `plannedDistance` | `Float` | Expected distance in km |
+| `endOdometer` | `Float?` | Set on completion |
+| `fuelConsumed` | `Float?` | Litres consumed — set on completion |
+| `createdById` | `String` | FK → `User.id` |
+| `createdAt` | `DateTime` | Record creation timestamp |
+| `updatedAt` | `DateTime` | Last update timestamp |
 
-Notes:
-- `status` is stored and covers ON_TRIP / OFF_DUTY / SUSPENDED — all backend-managed.
-- **License expiry is NOT stored as a status.** It's a raw date. "Is this driver eligible to be dispatched?" is computed at query/validation time as: `status === AVAILABLE AND licenseExpiry > today`. This avoids a stale "expired" status sitting in the DB if nothing runs a daily job to flip it. See backend doc §Computed Eligibility.
+### `MaintenanceLog`
 
-### Trip
-| Field | Type | Constraints |
+| Column | Type | Notes |
 |---|---|---|
-| id | uuid | PK |
-| source | string | not null |
-| destination | string | not null |
-| vehicleId | uuid | FK → Vehicle.id, not null |
-| driverId | uuid | FK → Driver.id, not null |
-| cargoWeight | decimal | not null, > 0 |
-| plannedDistance | decimal | not null, > 0 |
-| status | TripStatus | not null, default DRAFT |
-| startOdometer | decimal | nullable, set on dispatch |
-| endOdometer | decimal | nullable, set on complete |
-| fuelConsumed | decimal | nullable, set on complete (liters) |
-| createdBy | uuid | FK → User.id |
-| dispatchedAt | timestamp | nullable |
-| completedAt | timestamp | nullable |
-| cancelledAt | timestamp | nullable |
-| createdAt | timestamp | default now() |
+| `id` | `String` (UUID) | Primary key |
+| `vehicleId` | `String` | FK → `Vehicle.id` |
+| `description` | `String` | Description of the work being done |
+| `cost` | `Decimal?` | Estimated or final cost |
+| `status` | `MaintenanceStatus` | `ACTIVE` on creation; `CLOSED` when work completes |
+| `createdAt` | `DateTime` | Record creation timestamp |
+| `updatedAt` | `DateTime` | Last update timestamp |
 
-Constraint (app-level, not DB): `cargoWeight <= vehicle.maxLoadKg`, checked at dispatch time in the service layer, not as a DB CHECK, since it's a cross-table rule.
+### `FuelLog`
 
-### MaintenanceLog
-| Field | Type | Constraints |
+| Column | Type | Notes |
 |---|---|---|
-| id | uuid | PK |
-| vehicleId | uuid | FK → Vehicle.id, not null |
-| description | string | not null |
-| cost | decimal | not null, default 0 |
-| status | MaintenanceStatus | not null, default ACTIVE |
-| createdAt | timestamp | default now() |
-| closedAt | timestamp | nullable |
+| `id` | `String` (UUID) | Primary key |
+| `vehicleId` | `String` | FK → `Vehicle.id` |
+| `liters` | `Decimal` | Volume of fuel added |
+| `cost` | `Decimal` | Total cost of the fuelling event |
+| `date` | `DateTime` | Date of the fuelling event |
+| `createdAt` | `DateTime` | Record creation timestamp |
 
-### FuelLog
-| Field | Type | Constraints |
-|---|---|---|
-| id | uuid | PK |
-| vehicleId | uuid | FK → Vehicle.id, not null |
-| liters | decimal | not null, > 0 |
-| cost | decimal | not null, >= 0 |
-| date | date | not null |
-| createdAt | timestamp | default now() |
+### `Expense`
 
-### Expense
-| Field | Type | Constraints |
+| Column | Type | Notes |
 |---|---|---|
-| id | uuid | PK |
-| vehicleId | uuid | FK → Vehicle.id, not null |
-| type | string | not null (e.g. Toll, Fine, Maintenance-linked) |
-| amount | decimal | not null, >= 0 |
-| date | date | not null |
-| createdAt | timestamp | default now() |
+| `id` | `String` (UUID) | Primary key |
+| `vehicleId` | `String` | FK → `Vehicle.id` |
+| `type` | `String` | Free-text category: `Toll`, `Parking`, `Fine`, `Cleaning`, `Other`, `Revenue` |
+| `amount` | `Decimal` | Monetary value |
+| `date` | `DateTime` | Date the expense was incurred |
+| `createdAt` | `DateTime` | Record creation timestamp |
+
+### `User`
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | `String` (UUID) | Primary key |
+| `name` | `String` | Display name |
+| `email` | `String` | Unique — used for login |
+| `password` | `String` | bcrypt hash |
+| `role` | `Role` | Determines RBAC permissions |
+| `createdAt` | `DateTime` | Record creation timestamp |
+
+---
 
 ## Relationships
 
-- User 1—N Trip (createdBy)
-- User 1—0/1 Driver (a driver may have a login)
-- Vehicle 1—N Trip
-- Vehicle 1—N MaintenanceLog
-- Vehicle 1—N FuelLog
-- Vehicle 1—N Expense
-- Driver 1—N Trip
+| Relationship | Cardinality |
+|---|---|
+| `Vehicle` → `Trip` | One-to-many |
+| `Vehicle` → `MaintenanceLog` | One-to-many |
+| `Vehicle` → `FuelLog` | One-to-many |
+| `Vehicle` → `Expense` | One-to-many |
+| `Driver` → `Trip` | One-to-many |
+| `User` → `Trip` (`createdBy`) | One-to-many |
 
-## Indexes
+---
 
-- `Vehicle.regNumber` unique index
-- `Driver.licenseNumber` unique index
-- `Trip.vehicleId`, `Trip.driverId`, `Trip.status` — composite/individual indexes for dispatch-pool queries
-- `MaintenanceLog.vehicleId + status` — for "does this vehicle have an active maintenance log" lookups
-- `FuelLog.vehicleId + date`, `Expense.vehicleId + date` — for cost rollup queries
+## Implementation Notes
 
-## Computed values (NOT stored — derived at query time)
+### Status is system-managed
+`Vehicle.status` and `Driver.status` are never set by API consumers directly. They are transitioned exclusively by trip lifecycle mutations (dispatch, complete, cancel) and maintenance log mutations (open, close). The `PATCH /vehicles/:id` handler explicitly rejects any payload that includes a `status` field.
 
-These live in backend query logic, not the DB, to avoid drift:
+### Decimal serialisation
+Prisma serialises all `Decimal` columns as **strings** over JSON. This affects: `cost`, `amount`, `liters`, `cargoWeight`, `maxLoadKg`, `acquisitionCost`, and `odometer`. Any consumer performing arithmetic on these values must call `Number()` before operating — e.g. `Number(vehicle.maxLoadKg)`.
 
-1. **Driver dispatch eligibility** = `driver.status === AVAILABLE AND driver.licenseExpiry > CURRENT_DATE`
-2. **Vehicle dispatch eligibility** = `vehicle.status === AVAILABLE` (status is authoritative here — no additional derived check needed since IN_SHOP/RETIRED/ON_TRIP are always kept in sync by the transactional service functions)
-3. **Fuel Efficiency** (per vehicle) = `SUM(trip.plannedDistance for completed trips) / SUM(fuelLog.liters)`
-4. **Fleet Utilization (%)** = `COUNT(vehicles where status = ON_TRIP) / COUNT(vehicles where status != RETIRED) * 100`
-5. **Operational Cost** (per vehicle) = `SUM(FuelLog.cost) + SUM(MaintenanceLog.cost) + SUM(Expense.amount)`
-6. **Vehicle ROI** = `(Revenue - (Maintenance + Fuel)) / AcquisitionCost` — Revenue is out of scope for stored data (no revenue field defined in spec); treat Revenue as `SUM(Expense where type = 'Revenue')` if teams choose to log it, otherwise stub as 0 and flag in the report UI as "Revenue tracking not yet configured." **Decision needed from product owner before backend build** — flagging here so it isn't silently guessed at in two different ways by DB and frontend.
-
-## Referential integrity / cascade rules
-
-- Deleting a Vehicle or Driver is **not supported** in MVP (no hard delete) — use status RETIRED / SUSPENDED instead. This avoids orphaned Trip/MaintenanceLog/FuelLog rows.
-- FK on Trip.vehicleId / Trip.driverId: `ON DELETE RESTRICT` (should never fire given no hard deletes, but protects against accidental cleanup scripts).
-
-## Seed data requirements (for demo/testing)
-
-- 1 user per role (4 users)
-- 3–5 vehicles across statuses (mostly AVAILABLE, one IN_SHOP, one RETIRED)
-- 3–5 drivers (mostly AVAILABLE, one with expired license, one SUSPENDED)
-- 1–2 completed trips with fuel logs, to make Reports non-empty on first load
+### Seed data
+`prisma/seed.ts` populates the database with a representative set of vehicles, drivers, users (one per role), trips in various states, maintenance logs, fuel logs, and expenses — sufficient to exercise every dashboard metric and report endpoint.

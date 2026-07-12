@@ -1,77 +1,79 @@
-# TransitOps — Frontend Design
-
-React + TypeScript. Field names, enums, and endpoint paths match `db-design.md` and `backend-design.md` exactly.
+# Frontend
 
 ## Stack
 
-- React + TypeScript + Vite
-- Tailwind CSS + shadcn/ui components
-- React Router for navigation
-- TanStack Query (React Query) for all server state — no manual `useEffect` fetch/loading/error boilerplate
-- React Hook Form + zod (same schemas conceptually as backend, mirrored client-side) for forms
-- Recharts for charts
-- Axios instance with JWT interceptor
+| Dependency | Purpose |
+|---|---|
+| React 18 + TypeScript | UI framework |
+| Vite | Dev server and bundler |
+| Tailwind CSS v4 (`@tailwindcss/vite`) | Utility-first styling |
+| React Router v6 | Client-side routing |
+| TanStack Query (React Query) v5 | Server state management, caching, background refetch |
+| React Hook Form + Zod | Form state and validation |
+| Recharts | Data visualisation (charts) |
+| Axios | HTTP client with JWT interceptor |
+| Zustand | Auth state (token + user) |
+| Sonner | Toast notifications |
 
-## Folder structure
+---
+
+## Folder Structure
 
 ```
-src/
+frontend/src/
   main.tsx
-  App.tsx
+  App.tsx                     # React Router route definitions + QueryClientProvider
   api/
-    client.ts           # axios instance, attaches JWT from auth store
-    vehicles.ts          # typed API calls
+    client.ts                 # Axios instance; attaches Bearer token from authStore on every request
+    auth.ts
+    vehicles.ts
     drivers.ts
     trips.ts
     maintenance.ts
     fuel.ts
     expenses.ts
-    reports.ts
+    reports.ts                # also handles CSV export via window.open + ?token=
     dashboard.ts
   types/
-    index.ts             # shared TS types mirroring db-design.md entities/enums
+    index.ts                  # TypeScript interfaces matching the database schema
   store/
-    authStore.ts          # zustand or context — user, role, token
+    authStore.ts              # Zustand store: token, user, login(), logout()
   hooks/
-    useVehicles.ts         # React Query wrappers per resource
+    useVehicles.ts
     useDrivers.ts
     useTrips.ts
-    ...
+    useMaintenance.ts
+    useFuelExpenses.ts        # covers both fuel logs and expenses
+    useReports.ts
+    useDashboard.ts
   components/
+    common/
+      DataTable.tsx           # Generic sortable table component
+      Modal.tsx
+      PageHeader.tsx
+      StatusBadge.tsx         # Colour-coded pill for Vehicle/Driver/Trip/Maintenance statuses
+      ConfirmDialog.tsx
     layout/
-      AppShell.tsx
-      Sidebar.tsx           # nav items filtered by role
-      RoleGuard.tsx          # wraps routes, redirects if role not permitted
+      AppShell.tsx            # Sidebar + main content area shell
+      Sidebar.tsx             # Navigation links, filtered by authenticated user's role
+      RoleGuard.tsx           # Redirects to /login if no valid token is present
     dashboard/
       KpiCard.tsx
-      FleetUtilizationChart.tsx
-      FilterBar.tsx
+      FleetStatusChart.tsx    # Recharts PieChart; derives counts from DashboardStats
+      FilterBar.tsx           # vehicleType / status / region dropdowns
     vehicles/
-      VehicleTable.tsx
       VehicleForm.tsx
-      VehicleStatusBadge.tsx
     drivers/
-      DriverTable.tsx
       DriverForm.tsx
-      LicenseExpiryBadge.tsx   # red if expired, amber if <30 days
+      LicenseExpiryBadge.tsx
     trips/
-      TripTable.tsx
-      TripCreateForm.tsx        # vehicle/driver dropdowns use dispatchable=true filter
-      TripDetailDrawer.tsx       # dispatch/complete/cancel actions
+      TripCreateForm.tsx
+      TripDetailDrawer.tsx
     maintenance/
-      MaintenanceLogTable.tsx
       MaintenanceLogForm.tsx
-    fuel/
-      FuelLogForm.tsx
-    expenses/
-      ExpenseForm.tsx
     reports/
       ReportCard.tsx
-      RoiTable.tsx               # renders "N/A" when revenueTracked=false
-    common/
-      DataTable.tsx               # generic sortable/filterable table
-      StatusBadge.tsx
-      ConfirmDialog.tsx
+      RoiTable.tsx
   pages/
     LoginPage.tsx
     DashboardPage.tsx
@@ -81,130 +83,79 @@ src/
     MaintenancePage.tsx
     FuelExpensesPage.tsx
     ReportsPage.tsx
+  mocks/
+    data.ts                   # Static mock data used when VITE_USE_MOCK=true
+  lib/
+    utils.ts                  # formatCurrency, formatDate helpers
+    form.ts                   # zr() helper: wraps zodResolver for react-hook-form
 ```
 
-## Types (mirrors db-design.md)
+---
+
+## Routes
+
+| Path | Component | Access |
+|---|---|---|
+| `/login` | `LoginPage` | Public |
+| `/` | `DashboardPage` | Authenticated |
+| `/vehicles` | `VehiclesPage` | Authenticated |
+| `/drivers` | `DriversPage` | Authenticated |
+| `/trips` | `TripsPage` | Authenticated |
+| `/maintenance` | `MaintenancePage` | Authenticated |
+| `/fuel-expenses` | `FuelExpensesPage` | Authenticated |
+| `/reports` | `ReportsPage` | `FLEET_MANAGER`, `SAFETY_OFFICER`, `FINANCIAL_ANALYST` |
+
+`RoleGuard` wraps every protected route. Unauthenticated users are redirected to `/login`. Users without the required role for `/reports` see a 403 screen rather than the page content.
+
+---
+
+## API Client
+
+`api/client.ts` exports an Axios instance configured with the backend base URL. A request interceptor reads the current token from `authStore` and injects it as `Authorization: Bearer <token>` on every outgoing request. A response interceptor clears the auth store and redirects to `/login` on any `401` response.
+
+Each module in `api/` (e.g. `vehicles.ts`, `trips.ts`) exports typed functions that call the Axios instance and return the typed response data.
+
+---
+
+## Auth Store (`store/authStore.ts`)
+
+Zustand store with the following shape:
 
 ```ts
-type Role = 'FLEET_MANAGER' | 'DRIVER' | 'SAFETY_OFFICER' | 'FINANCIAL_ANALYST';
-type VehicleStatus = 'AVAILABLE' | 'ON_TRIP' | 'IN_SHOP' | 'RETIRED';
-type DriverStatus = 'AVAILABLE' | 'ON_TRIP' | 'OFF_DUTY' | 'SUSPENDED';
-type TripStatus = 'DRAFT' | 'DISPATCHED' | 'COMPLETED' | 'CANCELLED';
-type MaintenanceStatus = 'ACTIVE' | 'CLOSED';
-
-interface Vehicle {
-  id: string;
-  regNumber: string;
-  name: string;
-  type: string;
-  maxLoadKg: number;
-  odometer: number;
-  acquisitionCost: number;
-  status: VehicleStatus;
-  region: string | null;
-}
-
-interface Driver {
-  id: string;
-  name: string;
-  licenseNumber: string;
-  licenseCategory: string;
-  licenseExpiry: string; // ISO date
-  contactNumber: string;
-  safetyScore: number;
-  status: DriverStatus;
-}
-
-interface Trip {
-  id: string;
-  source: string;
-  destination: string;
-  vehicleId: string;
-  driverId: string;
-  cargoWeight: number;
-  plannedDistance: number;
-  status: TripStatus;
-  startOdometer: number | null;
-  endOdometer: number | null;
-  fuelConsumed: number | null;
+interface AuthState {
+  token: string | null;
+  user: { id: string; name: string; email: string; role: Role } | null;
+  login: (token: string, user: User) => void;
+  logout: () => void;
 }
 ```
-Keep these in `types/index.ts` as the single source of truth on the frontend — do not redeclare inline in components.
 
-## Routing & role-based access
+State is persisted to `localStorage` so the session survives page refresh.
 
-```
-/login                       — public
-/dashboard                   — all roles (content varies, see below)
-/vehicles                    — FLEET_MANAGER (edit), SAFETY_OFFICER/FINANCIAL_ANALYST (read-only)
-/drivers                     — FLEET_MANAGER, SAFETY_OFFICER (edit compliance fields)
-/trips                        — FLEET_MANAGER, DRIVER (create/dispatch/complete/cancel)
-/maintenance                  — FLEET_MANAGER
-/fuel-expenses                 — FLEET_MANAGER, DRIVER
-/reports                       — FINANCIAL_ANALYST (full), FLEET_MANAGER/SAFETY_OFFICER (read-only)
-```
+---
 
-`RoleGuard` wraps each route element; on mismatch, redirect to `/dashboard` with a toast, not a blank/error page. **Note:** this is UI convenience only — the backend RBAC table in `backend-design.md` is the actual enforcement boundary. Never rely on hiding a button as the security control.
+## Data Hooks
 
-## Dashboard page
+Each hook in `hooks/` wraps a TanStack Query `useQuery` or `useMutation` call, encapsulating the cache key, fetch function, and mutation side effects (cache invalidation). Consumers get typed, loading-aware data without managing fetch state themselves.
 
-- KPI cards (from `GET /api/dashboard`): Active Vehicles, Available Vehicles, Vehicles in Maintenance, Active Trips, Pending Trips, Drivers on Duty, Fleet Utilization %
-- `FilterBar`: vehicle type, status, region — all passed as query params to `useDashboard(filters)`, refetches on change (React Query key includes filters)
-- One chart: Fleet Utilization over time is out of scope for MVP (no time-series data modeled) — MVP chart is a simple status breakdown (pie/bar of vehicle counts by status)
+---
 
-## Trip creation flow (core demo path — build first)
+## Key Implementation Details
 
-1. `TripCreateForm`: source, destination, cargoWeight, plannedDistance — plus two dropdowns:
-   - Vehicle dropdown: `useVehicles({ dispatchable: true })` → calls `GET /api/vehicles?dispatchable=true`
-   - Driver dropdown: `useDrivers({ dispatchable: true })` → calls `GET /api/drivers?dispatchable=true`
-   - Client-side check: disable submit if `cargoWeight > selectedVehicle.maxLoadKg`, show inline error immediately (don't wait for server round-trip) — but this is a UX nicety, server re-validates regardless.
-2. On submit → `POST /api/trips` → creates DRAFT.
-3. `TripDetailDrawer` shows action buttons based on current status:
-   - DRAFT → "Dispatch" button → `POST /api/trips/:id/dispatch`
-   - DISPATCHED → "Complete" (opens form for endOdometer + fuelConsumed) and "Cancel" buttons
-   - COMPLETED/CANCELLED → read-only, no actions
-4. On any 409 from the backend (e.g. vehicle became unavailable between page load and click), show the server's error message directly via toast — don't mask it with a generic "something went wrong."
+### Decimal serialisation
+Prisma serialises `Decimal` database columns as **strings** over JSON. All frontend code that performs arithmetic on fields such as `cost`, `amount`, `liters`, `cargoWeight`, `maxLoadKg`, and `acquisitionCost` wraps those values in `Number()` before operating — e.g. `Number(vehicle.maxLoadKg)`. This applies to cost totals, per-litre calculations, and ROI computations.
 
-## Forms — validation pattern
+### Dispatchable filtering
+The trip creation form populates its vehicle and driver dropdowns using `GET /vehicles?dispatchable=true` and `GET /drivers?dispatchable=true` respectively. The server performs the eligibility filtering (checking status and licence expiry), so the dropdowns only ever present valid options.
 
-Every create/edit form: React Hook Form + zod resolver, schema shape mirrors the backend zod schema field-for-field. Example for Vehicle:
+### CSV export
+The reports page triggers CSV export with `window.open(\`/api/reports/export.csv?token=${token}\`)`. Because browser navigation requests cannot carry custom `Authorization` headers, the token is passed as a query parameter. The backend auth middleware accepts this fallback specifically for this use case.
 
-```ts
-const vehicleSchema = z.object({
-  regNumber: z.string().min(1),
-  name: z.string().min(1),
-  type: z.string().min(1),
-  maxLoadKg: z.number().positive(),
-  acquisitionCost: z.number().nonnegative(),
-  region: z.string().optional(),
-});
-```
-Do not include `status` as an editable field in `VehicleForm` or `DriverForm` — status is system-managed (matches backend rule that PATCH rejects a status field). Status is displayed via `VehicleStatusBadge` / driver equivalent, never as a form input.
+### Mock mode
+Set `VITE_USE_MOCK=true` in the frontend `.env` to replace all API calls with the static data defined in `src/mocks/data.ts`. This allows UI development and testing without a running backend.
 
-## Tables
+### Status badges
+`StatusBadge` maps each enum value to a specific colour class. The colour scheme is consistent across all entity types: green for active/available states, amber for in-progress states, red for error/suspended/retired states, and grey for terminal states (cancelled, closed).
 
-`DataTable` is a generic component (columns config + rows) reused across Vehicles/Drivers/Trips/Maintenance — avoids 4 near-duplicate table implementations. Supports client-side sort; filters are server-side (passed as query params) since lists may grow beyond a single page of demo data.
-
-- `LicenseExpiryBadge`: red badge if `licenseExpiry < today`, amber if within 30 days, green otherwise. Purely a display computation on the client from the raw `licenseExpiry` date — no backend "expired" status to keep in sync with (consistent with the computed-eligibility approach in db-design.md/backend-design.md).
-
-## Reports page
-
-- Cards/tables for Fuel Efficiency, Fleet Utilization, Operational Cost, ROI — one `ReportCard` per metric, each independently fetched (separate React Query hooks) so a slow one doesn't block the others.
-- ROI card: if API returns `revenueTracked: false`, render "N/A — revenue not configured" instead of a number. Never show a bare `0%` for this — it reads as "zero ROI" rather than "not tracked."
-- "Export CSV" button → hits `GET /api/reports/export.csv`, triggers browser download (no need to build CSV client-side, backend streams it).
-
-## Auth
-
-- `LoginPage`: email + password → `POST /api/auth/login` → store JWT + role in `authStore` (persist to memory only; do not use localStorage per artifact constraints if this is prototyped as an artifact — for a real deployed app, httpOnly cookie is preferable to localStorage anyway).
-- Axios interceptor attaches `Authorization: Bearer <token>` on every request; on 401, clear store and redirect to `/login`.
-
-## Build priority (matches backend-design.md priority order)
-
-1. Login + AppShell + RoleGuard
-2. Vehicles + Drivers tables/forms
-3. Trip creation + dispatch/complete/cancel flow (core demo path)
-4. Maintenance flow
-5. Fuel/Expense forms
-6. Dashboard KPIs
-7. Reports + CSV export
-8. Dark mode / polish if time remains
+### Form validation
+`lib/form.ts` exports a `zr()` helper that passes a Zod schema to `zodResolver` from `@hookform/resolvers/zod`. All forms use this helper to keep the `useForm` call concise and keep validation logic colocated with the Zod schema definition.
