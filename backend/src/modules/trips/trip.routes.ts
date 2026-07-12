@@ -4,6 +4,7 @@ import { requireRole } from "../../middleware/rbac";
 import { validate } from "../../middleware/validate";
 import { createTripSchema, completeTripSchema } from "./trip.schema";
 import * as tripService from "./trip.service";
+import { AppError } from "../../middleware/errorHandler";
 
 const router = Router();
 
@@ -38,7 +39,10 @@ router.post(
   validate(createTripSchema),
   async (req, res, next) => {
     try {
-      const trip = await tripService.createTrip(req.body, req.user!.id);
+      if (!req.user) {
+        throw new AppError(401, "UNAUTHORIZED", "User is not authenticated");
+      }
+      const trip = await tripService.createTrip(req.body, req.user.id);
       res.status(201).json(trip);
     } catch (error) {
       next(error);
@@ -52,7 +56,7 @@ router.post(
  */
 router.get("/:id", async (req, res, next) => {
   try {
-    const trip = await tripService.getTripById(req.params.id);
+    const trip = await tripService.getTripById(req.params.id as string);
     res.status(200).json(trip);
   } catch (error) {
     next(error);
@@ -70,7 +74,7 @@ router.post(
   requireRole(Role.FLEET_MANAGER, Role.DRIVER),
   async (req, res, next) => {
     try {
-      const trip = await tripService.dispatchTrip(req.params.id);
+      const trip = await tripService.dispatchTrip(req.params.id as string);
       res.status(200).json(trip);
     } catch (error) {
       next(error);
@@ -89,7 +93,7 @@ router.post(
   validate(completeTripSchema),
   async (req, res, next) => {
     try {
-      const trip = await tripService.completeTrip(req.params.id, req.body);
+      const trip = await tripService.completeTrip(req.params.id as string, req.body);
       res.status(200).json(trip);
     } catch (error) {
       next(error);
@@ -107,7 +111,7 @@ router.post(
   requireRole(Role.FLEET_MANAGER, Role.DRIVER),
   async (req, res, next) => {
     try {
-      const trip = await tripService.cancelTrip(req.params.id);
+      const trip = await tripService.cancelTrip(req.params.id as string);
       res.status(200).json(trip);
     } catch (error) {
       next(error);

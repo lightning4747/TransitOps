@@ -1,8 +1,8 @@
-import { Trip, TripStatus } from "@prisma/client";
+import { Trip, TripStatus, VehicleStatus, DriverStatus } from "@prisma/client";
 import prisma from "../../lib/prisma";
 import { CreateTripInput, CompleteTripInput } from "./trip.schema";
+import { isDriverDispatchEligible, isVehicleDispatchEligible } from "../../lib/eligibility";
 import { AppError } from "../../middleware/errorHandler";
-import { isVehicleDispatchEligible, isDriverDispatchEligible } from "../../lib/eligibility";
 
 export interface TripFilters {
   status?: TripStatus;
@@ -23,6 +23,18 @@ export const getTrips = async (filters: TripFilters): Promise<Trip[]> => {
   return prisma.trip.findMany({
     where,
     orderBy: { createdAt: "desc" },
+    include: {
+      vehicle: true,
+      driver: true,
+      creator: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          role: true,
+        },
+      },
+    },
   });
 };
 
@@ -42,8 +54,7 @@ export const createTrip = async (
   input: CreateTripInput,
   createdBy: string
 ): Promise<Trip> => {
-  // Validate FK targets exist before inserting — gives a clean 404 instead of
-  // a raw Prisma FK constraint error.
+  // Validate FK targets exist before inserting — gives a clean 404 instead of a raw Prisma FK constraint error.
   const vehicle = await prisma.vehicle.findUnique({ where: { id: input.vehicleId } });
   if (!vehicle) {
     throw new AppError(404, "VEHICLE_NOT_FOUND", "Vehicle not found");
@@ -88,18 +99,18 @@ export const dispatchTrip = async (tripId: string): Promise<Trip> => {
   // ── Business rule guards ────────────────────────────────────────────────────
 
   if (trip.status !== TripStatus.DRAFT) {
-    throw new AppError(409, "INVALID_TRIP_STATE", "Trip is not in DRAFT status");
+    throw new AppError(409, "INVALID_TRIP_STATE", "Only DRAFT trips can be dispatched");
   }
 
   if (!isVehicleDispatchEligible(vehicle)) {
-    throw new AppError(409, "VEHICLE_NOT_AVAILABLE", "Vehicle not available for dispatch");
+    throw new AppError(409, "VEHICLE_NOT_AVAILABLE", "Vehicle is not available for dispatch");
   }
 
   if (!isDriverDispatchEligible(driver)) {
     throw new AppError(
       409,
       "DRIVER_NOT_ELIGIBLE",
-      "Driver not eligible (license expired, suspended, or unavailable)"
+      "Driver is not eligible (license expired, suspended, or unavailable)"
     );
   }
 
@@ -113,7 +124,6 @@ export const dispatchTrip = async (tripId: string): Promise<Trip> => {
   }
 
   // ── Atomic transaction ──────────────────────────────────────────────────────
-  // All three writes must succeed or none do — no partial state.
   const [updatedTrip] = await prisma.$transaction([
     prisma.trip.update({
       where: { id: tripId },
@@ -125,11 +135,11 @@ export const dispatchTrip = async (tripId: string): Promise<Trip> => {
     }),
     prisma.vehicle.update({
       where: { id: vehicle.id },
-      data: { status: "ON_TRIP" },
+      data: { status: VehicleStatus.ON_TRIP },
     }),
     prisma.driver.update({
       where: { id: driver.id },
-      data: { status: "ON_TRIP" },
+      data: { status: DriverStatus.ON_TRIP },
     }),
   ]);
 
@@ -157,11 +167,11 @@ export const completeTrip = async (
   // ── Guards ──────────────────────────────────────────────────────────────────
 
   if (trip.status !== TripStatus.DISPATCHED) {
-    throw new AppError(409, "INVALID_TRIP_STATE", "Trip is not in DISPATCHED status");
+    throw new AppError(409, "INVALID_TRIP_STATE", "Only DISPATCHED trips can be completed");
   }
 
   // Odometer can only move forward.
-  if (input.endOdometer < Number(vehicle.odometer)) {
+  if (Number(input.endOdometer) < Number(vehicle.odometer)) {
     throw new AppError(
       400,
       "INVALID_ODOMETER",
@@ -170,7 +180,6 @@ export const completeTrip = async (
   }
 
   // ── Atomic transaction ──────────────────────────────────────────────────────
-  // FuelLog is NOT auto-created here — separate entry required (single-purpose).
   const [updatedTrip] = await prisma.$transaction([
     prisma.trip.update({
       where: { id: tripId },
@@ -184,13 +193,13 @@ export const completeTrip = async (
     prisma.vehicle.update({
       where: { id: vehicle.id },
       data: {
-        status: "AVAILABLE",
+        status: VehicleStatus.AVAILABLE,
         odometer: input.endOdometer, // advance vehicle odometer
       },
     }),
     prisma.driver.update({
       where: { id: driver.id },
-      data: { status: "AVAILABLE" },
+      data: { status: DriverStatus.AVAILABLE },
     }),
   ]);
 
@@ -203,8 +212,7 @@ export const cancelTrip = async (tripId: string): Promise<Trip> => {
   const trip = await getTripById(tripId);
 
   if (trip.status === TripStatus.DRAFT) {
-    // DRAFT cancel: no vehicle/driver were ever set ON_TRIP, so no side-effects needed.
-    // Simple status flip — no transaction required.
+    // DRAFT cancel: no vehicle/driver were ever set ON_TRIP. Simple status flip.
     return prisma.trip.update({
       where: { id: tripId },
       data: {
@@ -243,11 +251,11 @@ export const cancelTrip = async (tripId: string): Promise<Trip> => {
     }),
     prisma.vehicle.update({
       where: { id: vehicle.id },
-      data: { status: "AVAILABLE" },
+      data: { status: VehicleStatus.AVAILABLE },
     }),
     prisma.driver.update({
       where: { id: driver.id },
-      data: { status: "AVAILABLE" },
+      data: { status: DriverStatus.AVAILABLE },
     }),
   ]);
 
